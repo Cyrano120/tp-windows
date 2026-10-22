@@ -1,11 +1,13 @@
-import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { getFirestore } from "firebase/firestore";
+import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { storage } from "./firebase";
 
-export const storage = getStorage();
-export const db = getFirestore();
-
+/**
+ * Téléverse une image dans Firebase Storage et renvoie son URL publique.
+ * Le chemin est cloisonné par utilisateur pour éviter les collisions.
+ */
 export async function uploadImage(file, path = "produits") {
-  const storageRef = ref(storage, `${path}/${Date.now()}_${file.name}`);
+  const nomPropre = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const storageRef = ref(storage, `${path}/${Date.now()}_${nomPropre}`);
   const snapshot = await uploadBytes(storageRef, file);
   return getDownloadURL(snapshot.ref);
 }

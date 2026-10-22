@@ -1,111 +1,135 @@
 import { Link } from "react-router-dom";
+import ArticleCard from "../components/ArticleCard";
+import { PRODUITS, normaliserProduit } from "../data/catalogue";
 
-const produits = [
-  { id: 1, nom: "Chemise élégante", prix: "15 000", img: "https://images.unsplash.com/photo-1596755094514-f87e34085b2c?w=300&h=300&fit=crop" },
-  { id: 2, nom: "Robe fleurie", prix: "22 000", img: "https://images.unsplash.com/photo-1572804013309-59a88b7e92f1?w=300&h=300&fit=crop" },
-  { id: 3, nom: "Montre connectée", prix: "35 000", img: "https://images.unsplash.com/photo-1546868871-af0de0ae72ba?w=300&h=300&fit=crop" },
-  { id: 4, nom: "Sac à main", prix: "25 000", img: "https://images.unsplash.com/photo-1584917865442-de89df76afd3?w=300&h=300&fit=crop" },
-];
-
-const categories = [
-  { nom: "Homme", img: "https://images.unsplash.com/photo-1617137968427-85924c800a22?w=400&h=400&fit=crop", count: "45 articles" },
-  { nom: "Femme", img: "https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?w=400&h=400&fit=crop", count: "38 articles" },
-  { nom: "Accessoires", img: "https://images.unsplash.com/photo-1606760227091-3dd870d97f1d?w=400&h=400&fit=crop", count: "24 articles" },
-];
-
-const avis = [
+const AVIS = [
   { nom: "Alice M.", note: "★★★★★", texte: "Commande reçue en 48h ! Produit conforme, je recommande." },
   { nom: "Jean K.", note: "★★★★★", texte: "Enfin une plateforme locale qui fonctionne. Paiement mobile simple et rapide." },
   { nom: "Sarah B.", note: "★★★★☆", texte: "Beau catalogue et service client réactif. Je suis conquise." },
 ];
 
-function Accueil() {
+const CATEGORIES = [
+  { nom: "Homme", image: "https://images.unsplash.com/photo-1617137968427-85924c800a22?w=700&h=700&fit=crop" },
+  { nom: "Femme", image: "https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?w=700&h=700&fit=crop" },
+  { nom: "Accessoires", image: "https://images.unsplash.com/photo-1606760227091-3dd870d97f1d?w=700&h=700&fit=crop" },
+];
+
+const ETAPES = [
+  { titre: "Trouve ta pièce", texte: "Parcours le catalogue, filtre par catégorie, taille ou budget." },
+  { titre: "Négocie ou achète", texte: "Fais une offre au vendeur ou ajoute directement au panier." },
+  { titre: "Reçois chez toi", texte: "Paiement mobile, livraison suivie et protection acheteur." },
+];
+
+export default function Accueil() {
+  const produits = PRODUITS.map(normaliserProduit);
+  const nouveautes = produits.slice(0, 8);
+  const compteurs = produits.reduce((acc, p) => {
+    acc[p.categorie] = (acc[p.categorie] || 0) + 1;
+    return acc;
+  }, {});
+
   return (
     <div className="accueil">
-      {/* HERO */}
       <section className="hero">
-        <div className="hero-bg">
-          <div className="hero-circle c1" />
-          <div className="hero-circle c2" />
-          <div className="hero-circle c3" />
-        </div>
         <div className="hero-content">
-          <span className="hero-badge">🔥 Nouvelle collection été 2026</span>
-          <h1>
-            La mode <span className="gradient-text">africaine</span>
-            <br />à portée de clic
-          </h1>
-          <p>Achète et vends des articles de mode en toute sécurité. Paiement mobile, livraison suivie.</p>
+          <span className="hero-badge">🇬🇦 La marketplace mode du Gabon</span>
+          <h1>Achète et vends <span className="gradient-text">seconde main</span> en toute confiance.</h1>
+          <p>Des pièces uniques, des vendeurs vérifiés et une livraison suivie partout au Gabon. Donne une seconde vie à ton dressing.</p>
           <div className="hero-actions">
             <Link to="/catalogue" className="btn-primary btn-lg">Explorer le catalogue</Link>
-            <Link to="/register" className="btn-secondary btn-lg">Créer un compte</Link>
+            <Link to="/register" className="btn-secondary btn-lg">Vendre un article</Link>
           </div>
           <div className="hero-stats">
-            <div className="hero-stat"><strong>500+</strong> Produits</div>
-            <div className="hero-stat"><strong>1 200+</strong> Clients</div>
-            <div className="hero-stat"><strong>98%</strong> Satisfaits</div>
+            <div className="hero-stat"><strong>{produits.length}+</strong>articles en ligne</div>
+            <div className="hero-stat"><strong>4,8/5</strong>note moyenne</div>
+            <div className="hero-stat"><strong>48h</strong>livraison locale</div>
           </div>
         </div>
+
+        <div className="hero-visual" aria-hidden="true">
+          <div className="hero-tile t1"><img src={produits[1]?.image} alt="" /></div>
+          <div className="hero-tile t2"><img src={produits[7]?.image} alt="" /></div>
+          <div className="hero-tile t3"><img src={produits[4]?.image} alt="" /></div>
+          <div className="hero-float"><span>🛡️</span> Protection acheteur incluse</div>
+        </div>
       </section>
 
-      {/* CATEGORIES */}
       <section className="cat-section">
-        <h2>Nos catégories</h2>
+        <div className="section-header">
+          <div>
+            <h2>Explore par catégorie</h2>
+            <p>Des looks pour tous les styles, à petits prix.</p>
+          </div>
+          <Link to="/catalogue" className="btn-secondary btn-sm">Tout voir</Link>
+        </div>
         <div className="cat-grid">
-          {categories.map((cat) => (
-            <Link key={cat.nom} to="/catalogue" className="cat-card">
-              <img src={cat.img} alt={cat.nom} />
+          {CATEGORIES.map((cat) => (
+            <Link key={cat.nom} to={`/catalogue?cat=${cat.nom}`} className="cat-card">
+              <img src={cat.image} alt={cat.nom} loading="lazy" />
               <div className="cat-overlay">
                 <h3>{cat.nom}</h3>
-                <span>{cat.count}</span>
+                <span>{compteurs[cat.nom] || 0} articles</span>
               </div>
             </Link>
           ))}
         </div>
       </section>
 
-      {/* PRODUITS POPULAIRES */}
       <section className="pop-section">
         <div className="section-header">
-          <h2>Produits populaires</h2>
-          <Link to="/catalogue" className="btn-secondary">Voir tout →</Link>
+          <div>
+            <h2>Nouveautés</h2>
+            <p>Les dernières pièces ajoutées par nos vendeurs.</p>
+          </div>
+          <Link to="/catalogue?tri=nouveaux" className="btn-secondary btn-sm">Voir plus</Link>
         </div>
-        <div className="pop-grid">
-          {produits.map((p) => (
-            <Link key={p.id} to="/catalogue" className="pop-card">
-              <div className="pop-img">
-                <img src={p.img} alt={p.nom} loading="lazy" />
-              </div>
-              <div className="pop-body">
-                <h4>{p.nom}</h4>
-                <p className="pop-price">{p.prix} FCFA</p>
-              </div>
-            </Link>
-          ))}
+        <div className="products-grid">
+          {nouveautes.map((produit) => <ArticleCard key={produit.id} produit={produit} />)}
         </div>
       </section>
 
-      {/* AVIS */}
-      <section className="avis-section">
-        <h2>Ce qu'ils disent</h2>
-        <div className="avis-grid">
-          {avis.map((a, i) => (
-            <div key={i} className="avis-card">
-              <span className="avis-note">{a.note}</span>
-              <p className="avis-texte">"{a.texte}"</p>
-              <p className="avis-nom">— {a.nom}</p>
+      <section className="how-section">
+        <div className="section-header">
+          <div>
+            <h2>Comment ça marche ?</h2>
+            <p>Trois étapes, zéro complication.</p>
+          </div>
+        </div>
+        <div className="how-grid">
+          {ETAPES.map((etape, i) => (
+            <div key={etape.titre} className="how-card">
+              <div className="how-step">{i + 1}</div>
+              <h3>{etape.titre}</h3>
+              <p>{etape.texte}</p>
             </div>
           ))}
         </div>
       </section>
 
-      {/* CTA */}
+      <section className="avis-section">
+        <div className="section-header">
+          <div>
+            <h2>Ils nous font confiance</h2>
+            <p>Les avis de la communauté Cyrano.</p>
+          </div>
+        </div>
+        <div className="avis-grid">
+          {AVIS.map((avis) => (
+            <div key={avis.nom} className="avis-card">
+              <span className="avis-note">{avis.note}</span>
+              <p className="avis-texte">« {avis.texte} »</p>
+              <span className="avis-nom">{avis.nom}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
       <section className="cta-section">
         <div className="cta-card">
-          <h2>Prêt à rejoindre Cyrano ?</h2>
-          <p>Inscris-toi gratuitement et commence à acheter ou vendre dès aujourd'hui.</p>
+          <h2>Ton dressing peut rapporter gros.</h2>
+          <p>Ouvre ta boutique en 2 minutes, gratuitement. Tu fixes tes prix, on s'occupe du reste.</p>
           <div className="hero-actions">
-            <Link to="/register" className="btn-primary btn-lg">S'inscrire gratuitement</Link>
+            <Link to="/register" className="btn-primary btn-lg">Devenir vendeur</Link>
             <Link to="/catalogue" className="btn-secondary btn-lg">Voir le catalogue</Link>
           </div>
         </div>
@@ -113,5 +137,3 @@ function Accueil() {
     </div>
   );
 }
-
-export default Accueil;

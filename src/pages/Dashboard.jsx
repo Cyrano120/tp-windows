@@ -1,29 +1,55 @@
-import { useState, useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { useSelector, useDispatch } from "react-redux";
-import { collection, getDocs, doc, updateDoc, deleteDoc, addDoc } from "firebase/firestore";
+import { addDoc, collection, deleteDoc, doc, getDocs, updateDoc } from "firebase/firestore";
 import { db } from "../firebase/firebase";
 import { setOrders, setLoading, updateOrderStatus } from "../store/ordersSlice";
-import { setProducts, addProduct, updateProduct, deleteProduct } from "../store/productsSlice";
-import { setOffres, updateOffreStatus, setLoading as setOffresLoading } from "../store/offresSlice";
+import { addProduct, deleteProduct, setProducts, updateProduct } from "../store/productsSlice";
+import { setOffres, updateOffreStatus } from "../store/offresSlice";
+import { PageLoader } from "../components/RequireAuth";
+import { PRODUITS, normaliserProduit } from "../data/catalogue";
+import { statutSlug } from "../utils/statut";
 import toast from "react-hot-toast";
 import { Bar, Doughnut } from "react-chartjs-2";
-import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement } from "chart.js";
-import { seedFirestore } from "../firebase/seed";
+import { Chart as ChartJS, ArcElement, BarElement, CategoryScale, Legend, LinearScale, Title, Tooltip } from "chart.js";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement);
 
-function Dashboard() {
+const ONGLETS = [
+  { id: "apercu", label: "Vue d'ensemble" },
+  { id: "produits", label: "Produits" },
+  { id: "commandes", label: "Commandes" },
+  { id: "offres", label: "Offres" },
+  { id: "utilisateurs", label: "Utilisateurs" },
+];
+
+const ROLES = [
+  { id: "client", label: "Client" },
+  { id: "vendeur", label: "Vendeur" },
+  { id: "admin", label: "Admin" },
+];
+
+const PROCHAIN_STATUT = { "Reçue": "En cours", "En cours": "Expédiée", "Expédiée": "Livrée" };
+const FORM_VIDE = { nom: "", prix: "", categorie: "Homme", tailles: "", image: "", stock: "1" };
+
+export default function Dashboard() {
   const dispatch = useDispatch();
-  const { orders } = useSelector((state) => state.orders);
-  const { items: products } = useSelector((state) => state.products);
-  const offres = useSelector((state) => state.offres.items);
+  const { orders, loading } = useSelector((s) => s.orders);
+  const products = useSelector((s) => s.products.items);
+  const offres = useSelector((s) => s.offres.items);
+  const admin = useSelector((s) => s.auth.user);
+
   const [users, setUsers] = useState([]);
+  const [onglet, setOnglet] = useState("apercu");
   const [showForm, setShowForm] = useState(false);
   const [editProd, setEditProd] = useState(null);
-  const [form, setForm] = useState({ nom: "", prix: "", categorie: "Homme", tailles: "", image: "" });
+  const [form, setForm] = useState(FORM_VIDE);
+  const [rechercheProduit, setRechercheProduit] = useState("");
+  const [rechercheUser, setRechercheUser] = useState("");
 
   useEffect(() => {
-    const fetchData = async () => {
+    let actif = true;
+    (async () => {
       dispatch(setLoading(true));
       try {
         const [ordsSnap, prodsSnap, offresSnap, usersSnap] = await Promise.all([
@@ -32,30 +58,62 @@ function Dashboard() {
           getDocs(collection(db, "offres")),
           getDocs(collection(db, "utilisateurs")),
         ]);
+        if (!actif) return;
         dispatch(setOrders(ordsSnap.docs.map((d) => ({ id: d.id, ...d.data() }))));
-        if (!prodsSnap.empty) dispatch(setProducts(prodsSnap.docs.map((d) => ({ id: d.id, ...d.data() }))));
+        dispatch(setProducts(prodsSnap.docs.map((d) => ({ id: d.id, ...d.data() }))));
         dispatch(setOffres(offresSnap.docs.map((d) => ({ id: d.id, ...d.data() }))));
         setUsers(usersSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      } catch { console.error("Erreur chargement"); }
-      finally { dispatch(setLoading(false)); }
-    };
-    fetchData();
+      } catch {
+        toast.error("Erreur de chargement des données d'administration.");
+      } finally {
+        if (actif) dispatch(setLoading(false));
+      }
+    })();
+    return () => { actif = false; };
   }, [dispatch]);
 
-  const totalVentes = orders.reduce((s, o) => s + (o.total || 0), 0);
+  const produitsAffiches = useMemo(() => {
+    const demo = PRODUITS.map((p) => ({ ...normaliserProduit(p), demo: true }));
+    return [...demo, ...products];
+  }, [products]);
+
+  const produitsFiltres = useMemo(
+    () => produitsAffiches.filter((p) => `${p.nom} ${p.categorie} ${p.vendeur}`.toLowerCase().includes(rechercheProduit.toLowerCase())),
+    [produitsAffiches, rechercheProduit]
+  );
+
+  const usersFiltres = useMemo(
+    () => users.filter((u) => `${u.nom || ""} ${u.email || ""} ${u.role || ""}`.toLowerCase().includes(rechercheUser.toLowerCase())),
+    [users, rechercheUser]
+  );
+
+  const totalVentes = orders.reduce((s, o) => s + (Number(o.total) || 0), 0);
+  const offresEnAttente = offres.filter((o) => o.status === "en_attente").length;
+
+  const commandesTriees = useMemo(
+    () => [...orders].sort((a, b) => {
+      const dateA = a.date ? new Date(a.date).getTime() : (a.createdAt?.seconds || 0) * 1000;
+      const dateB = b.date ? new Date(b.date).getTime() : (b.createdAt?.seconds || 0) * 1000;
+      return (dateB || 0) - (dateA || 0);
+    }),
+    [orders]
+  );
+
   const stats = [
     { label: "Commandes", value: orders.length, color: "#007782" },
-    { label: "Produits", value: products.length, color: "#764ba2" },
-    { label: "Revenus", value: `${totalVentes.toLocaleString()} FCFA`, color: "#00d4ff" },
-    { label: "Livrées", value: orders.filter((o) => o.status === "Livrée").length, color: "#10b981" },
+    { label: "Revenus", value: `${totalVentes.toLocaleString("fr-FR")} FCFA`, color: "#067647" },
+    { label: "Produits", value: produitsAffiches.length, color: "#7a5af8" },
+    { label: "Utilisateurs", value: users.length, color: "#175cd3" },
+    { label: "Offres en attente", value: offresEnAttente, color: "#b54708" },
   ];
 
   const revenusParMois = useMemo(() => {
     const mois = {};
     orders.forEach((o) => {
-      if (o.date) {
-        const m = new Date(o.date).toLocaleString("fr-FR", { month: "short" });
-        mois[m] = (mois[m] || 0) + (o.total || 0);
+      const d = o.date ? new Date(o.date) : null;
+      if (d && !Number.isNaN(d.getTime())) {
+        const m = d.toLocaleString("fr-FR", { month: "short", year: "2-digit" });
+        mois[m] = (mois[m] || 0) + (Number(o.total) || 0);
       }
     });
     return mois;
@@ -69,138 +127,301 @@ function Dashboard() {
 
   const barData = {
     labels: Object.keys(revenusParMois),
-    datasets: [{ label: "Revenus (FCFA)", data: Object.values(revenusParMois), backgroundColor: "#007782", borderRadius: 4 }],
+    datasets: [{ label: "Revenus (FCFA)", data: Object.values(revenusParMois), backgroundColor: "#007782", borderRadius: 6 }],
   };
 
   const doughnutData = {
     labels: Object.keys(statusCount),
-    datasets: [{ data: Object.values(statusCount), backgroundColor: ["#ffc800", "#00d4ff", "#7b2ff7", "#10b981"] }],
+    datasets: [{
+      data: Object.values(statusCount),
+      backgroundColor: ["#f5a623", "#175cd3", "#7a5af8", "#067647", "#d92d20"],
+      borderWidth: 0,
+    }],
   };
 
-  const nextStatus = { "Reçue": "En cours", "En cours": "Expédiée", "Expédiée": "Livrée", "Livrée": null };
-
-  const handleStatus = async (order) => {
-    const next = nextStatus[order.status];
-    if (!next) return;
+  const avancerCommande = async (order) => {
+    const suivant = PROCHAIN_STATUT[order.status];
+    if (!suivant) return;
     try {
-      await updateDoc(doc(db, "commandes", order.id), { status: next });
-      dispatch(updateOrderStatus({ id: order.id, status: next }));
-      toast.success(`Commande ${order.id.slice(0, 8)} → ${next}`);
-    } catch { toast.error("Erreur mise à jour"); }
+      await updateDoc(doc(db, "commandes", order.id), { status: suivant });
+      dispatch(updateOrderStatus({ id: order.id, status: suivant }));
+      toast.success(`Commande #${order.id.slice(0, 8)} → ${suivant}`);
+    } catch {
+      toast.error("Erreur de mise à jour du statut.");
+    }
   };
 
-  const handleRoleChange = async (u, newRole) => {
+  const changerRole = async (u, role) => {
+    if (u.id === admin.uid) return toast.error("Tu ne peux pas modifier ton propre rôle.");
+    if (!confirm(`Attribuer le rôle « ${role} » à ${u.nom || u.email} ?`)) return;
     try {
-      await updateDoc(doc(db, "utilisateurs", u.id), { role: newRole });
-      setUsers((prev) => prev.map((x) => x.id === u.id ? { ...x, role: newRole } : x));
-      toast.success(`${u.nom || u.email} → ${newRole}`);
-    } catch { toast.error("Erreur changement de rôle"); }
+      await updateDoc(doc(db, "utilisateurs", u.id), { role });
+      setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, role } : x)));
+      toast.success(`${u.nom || u.email} → ${role}`);
+    } catch {
+      toast.error("Erreur lors du changement de rôle.");
+    }
   };
 
-  const handleOffreStatus = async (offre, newStatus) => {
+  const statutOffre = async (offre, status) => {
     try {
-      await updateDoc(doc(db, "offres", offre.id), { status: newStatus });
-      dispatch(updateOffreStatus({ id: offre.id, status: newStatus }));
-      toast.success(`Offre ${newStatus === "acceptée" ? "acceptée" : "refusée"}`);
-    } catch { toast.error("Erreur mise à jour offre"); }
+      await updateDoc(doc(db, "offres", offre.id), { status });
+      dispatch(updateOffreStatus({ id: offre.id, status }));
+      toast.success(`Offre ${status}`);
+    } catch {
+      toast.error("Erreur de mise à jour de l'offre.");
+    }
   };
 
-  const handleDelete = async (id) => {
-    if (!confirm("Supprimer ce produit ?")) return;
+  const supprimerProduit = async (p) => {
+    if (p.demo) return toast.error("Les produits de démonstration ne sont pas modifiables.");
+    if (!confirm(`Supprimer « ${p.nom} » ?`)) return;
     try {
-      await deleteDoc(doc(db, "produits", id));
-      dispatch(deleteProduct(id));
+      await deleteDoc(doc(db, "produits", p.id));
+      dispatch(deleteProduct(p.id));
       toast.success("Produit supprimé");
-    } catch { toast.error("Erreur suppression"); }
+    } catch {
+      toast.error("Erreur de suppression.");
+    }
   };
 
-  const openEdit = (prod) => {
-    setEditProd(prod);
-    setForm({ nom: prod.nom, prix: prod.prix?.toString() || "", categorie: prod.categorie || "Homme", tailles: (prod.tailles || []).join(", "), image: prod.image || "" });
+  const openEdit = (p) => {
+    if (p.demo) return toast.error("Produit de démonstration : non modifiable.");
+    setEditProd(p);
+    setForm({
+      nom: p.nom || "", prix: p.prix?.toString() || "", categorie: p.categorie || "Homme",
+      tailles: (p.tailles || []).join(", "), image: p.image || "", stock: String(p.stock ?? 1),
+    });
     setShowForm(true);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const data = { nom: form.nom, prix: Number(form.prix), categorie: form.categorie, tailles: form.tailles.split(",").map((t) => t.trim()).filter(Boolean), image: form.image };
+    const prix = Number(form.prix);
+    if (prix <= 0) return toast.error("Prix invalide.");
+    const base = {
+      nom: form.nom.trim(),
+      prix,
+      categorie: form.categorie,
+      tailles: form.tailles.split(",").map((t) => t.trim()).filter(Boolean),
+      image: form.image.trim() || "https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=700&h=900&fit=crop",
+      stock: Number(form.stock) || 1,
+    };
     try {
       if (editProd) {
-        await updateDoc(doc(db, "produits", editProd.id), data);
-        dispatch(updateProduct({ id: editProd.id, ...data }));
+        await updateDoc(doc(db, "produits", editProd.id), base);
+        dispatch(updateProduct({ ...editProd, ...base }));
         toast.success("Produit modifié");
       } else {
+        const data = { ...base, vendeurId: null, vendeurNom: "Cyrano", vendeur: "Cyrano", etat: "Neuf", note: 0, nbAvis: 0 };
         const ref = await addDoc(collection(db, "produits"), data);
         dispatch(addProduct({ id: ref.id, ...data }));
         toast.success("Produit ajouté");
       }
       setShowForm(false);
       setEditProd(null);
-    } catch { toast.error("Erreur enregistrement"); }
+      setForm(FORM_VIDE);
+    } catch {
+      toast.error("Erreur d'enregistrement.");
+    }
   };
 
-  const handleSeed = async () => {
-    if (!confirm("Ajouter les 10 produits de démo dans Firestore ?")) return;
-    try {
-      await seedFirestore();
-      toast.success("Base de données initialisée !");
-      window.location.reload();
-    } catch { toast.error("Erreur lors du seed"); }
-  };
-
-  const exportCSV = () => {
-    const headers = "ID,Client,Total,Statut,Date\n";
-    const rows = orders.map((o) => `${o.id},${o.client?.nom || "N/A"},${o.total || 0},${o.status},${o.date || ""}`).join("\n");
-    const blob = new Blob([headers + rows], { type: "text/csv" });
+  const exporterCSV = () => {
+    // Neutralise les formules Excel (=, +, -, @) pour éviter une injection CSV.
+    const echapper = (v) => {
+      let valeur = String(v ?? "");
+      if (/^[=+\-@\t\r]/.test(valeur)) valeur = `'${valeur}`;
+      return `"${valeur.replace(/"/g, '""')}"`;
+    };
+    const entetes = ["ID", "Client", "Email", "Téléphone", "Adresse", "Total", "Paiement", "Statut", "Date"];
+    const lignes = orders.map((o) => [
+      o.id, o.client?.nom, o.client?.email || o.clientEmail, o.client?.tel, o.client?.adresse,
+      o.total, o.paiement, o.status, o.date,
+    ].map(echapper).join(","));
+    const blob = new Blob([`\uFEFF${entetes.join(",")}\n${lignes.join("\n")}`], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = "commandes.csv"; a.click();
-    toast.success("CSV exporté");
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `commandes-cyrano-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Export CSV téléchargé");
   };
+
+  if (loading && orders.length === 0) return <PageLoader label="Chargement du tableau de bord…" />;
 
   return (
     <div className="dashboard">
       <div className="dash-header">
-        <h2>Tableau de Bord</h2>
+        <div>
+          <h2>Tableau de bord</h2>
+          <p className="dash-sub">Supervision de la plateforme Cyrano.</p>
+        </div>
         <div className="dash-actions">
-          <button className="btn-secondary" onClick={exportCSV}>📥 CSV</button>
-          <button className="btn-secondary" onClick={handleSeed}>🌱 Seed DB</button>
-          <button className="btn-primary" onClick={() => { setEditProd(null); setForm({ nom: "", prix: "", categorie: "Homme", tailles: "", image: "" }); setShowForm(true); }}>
-            + Ajouter produit
-          </button>
+          <button className="btn-secondary" onClick={exporterCSV}>📥 Exporter CSV</button>
+          <button className="btn-primary" onClick={() => { setEditProd(null); setForm(FORM_VIDE); setShowForm(true); }}>+ Ajouter produit</button>
         </div>
       </div>
 
       <div className="stats-grid">
         {stats.map((s) => (
-          <div key={s.label} className="stat-card" style={{ borderTopColor: s.color }}>
+          <div key={s.label} className="stat-card" style={{ "--stat-color": s.color }}>
             <h3>{s.label}</h3>
-            <p>{s.value}</p>
+            <p style={String(s.value).length > 12 ? { fontSize: 18 } : undefined}>{s.value}</p>
           </div>
         ))}
       </div>
 
-      <div className="charts-grid">
-        <div className="chart-card">
-          <h3>Revenus par mois</h3>
-          {Object.keys(revenusParMois).length > 0 ? <Bar data={barData} options={{ responsive: true, plugins: { legend: { display: false } } }} /> : <p className="no-results">Aucune donnée</p>}
-        </div>
-        <div className="chart-card">
-          <h3>Statut des commandes</h3>
-          {Object.keys(statusCount).length > 0 ? <Doughnut data={doughnutData} options={{ responsive: true }} /> : <p className="no-results">Aucune donnée</p>}
-        </div>
+      <div className="tabs" role="tablist">
+        {ONGLETS.map((o) => (
+          <button key={o.id} role="tab" aria-selected={onglet === o.id} className={`tab ${onglet === o.id ? "active" : ""}`} onClick={() => setOnglet(o.id)}>
+            {o.label}
+            {o.id === "offres" && offresEnAttente > 0 && <span className="badge" style={{ marginLeft: 6 }}>{offresEnAttente}</span>}
+          </button>
+        ))}
       </div>
+
+      {onglet === "apercu" && (
+        <>
+          <div className="charts-grid">
+            <div className="chart-card">
+              <h3>Revenus par mois</h3>
+              {Object.keys(revenusParMois).length > 0
+                ? <Bar data={barData} options={{ responsive: true, plugins: { legend: { display: false } } }} />
+                : <p className="no-results">Aucune donnée pour le moment.</p>}
+            </div>
+            <div className="chart-card">
+              <h3>Statut des commandes</h3>
+              {Object.keys(statusCount).length > 0
+                ? <Doughnut data={doughnutData} options={{ responsive: true, plugins: { legend: { position: "bottom" } } }} />
+                : <p className="no-results">Aucune commande pour le moment.</p>}
+            </div>
+          </div>
+
+          <h3>Dernières commandes</h3>
+          <div className="dash-table">
+            {commandesTriees.slice(0, 5).map((order) => (
+              <div key={order.id} className="dash-row">
+                <div>
+                  <strong>#{order.id.slice(0, 8).toUpperCase()}</strong> — {order.client?.nom || "Client"} — {order.total?.toLocaleString("fr-FR")} FCFA
+                  <span className={`badge-status ${statutSlug(order.status)}`}>{order.status}</span>
+                </div>
+                {PROCHAIN_STATUT[order.status] && (
+                  <button className="btn-small" onClick={() => avancerCommande(order)}>→ {PROCHAIN_STATUT[order.status]}</button>
+                )}
+              </div>
+            ))}
+            {orders.length === 0 && <div className="dash-empty">Aucune commande enregistrée.</div>}
+          </div>
+        </>
+      )}
+
+      {onglet === "produits" && (
+        <>
+          <input className="search-bar" placeholder="Rechercher un produit, une catégorie, un vendeur…" value={rechercheProduit} onChange={(e) => setRechercheProduit(e.target.value)} style={{ marginBottom: 16 }} />
+          <div className="dash-table">
+            {produitsFiltres.map((p) => (
+              <div key={`${p.demo ? "demo-" : ""}${p.id}`} className="dash-row">
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <img src={p.image} alt="" style={{ width: 40, height: 52, objectFit: "cover", borderRadius: 8 }} />
+                  <div>
+                    <strong>{p.nom}</strong>{p.demo && <span className="role-badge">démo</span>}
+                    <div className="dash-cat">{p.categorie} · {p.vendeur || "Cyrano"} · {p.prix?.toLocaleString("fr-FR")} FCFA</div>
+                  </div>
+                </div>
+                {!p.demo && (
+                  <div className="dash-row-actions">
+                    <Link to={`/produit/${p.id}`} className="btn-small">Voir</Link>
+                    <button className="btn-small" onClick={() => openEdit(p)}>Modifier</button>
+                    <button className="btn-small btn-danger" onClick={() => supprimerProduit(p)}>Supprimer</button>
+                  </div>
+                )}
+              </div>
+            ))}
+            {produitsFiltres.length === 0 && <div className="dash-empty">Aucun produit trouvé.</div>}
+          </div>
+        </>
+      )}
+
+      {onglet === "commandes" && (
+        <div className="dash-table">
+          {commandesTriees.map((order) => (
+            <div key={order.id} className="dash-row">
+              <div>
+                <strong>#{order.id.slice(0, 8).toUpperCase()}</strong> — {order.client?.nom || "Client"} ({order.client?.tel || "—"})
+                <span className={`badge-status ${statutSlug(order.status)}`}>{order.status}</span>
+                <div className="dash-cat">
+                  {order.total?.toLocaleString("fr-FR")} FCFA · {(order.articles || []).length} article(s) · {order.paiement || "paiement n/c"}
+                </div>
+              </div>
+              {PROCHAIN_STATUT[order.status] && (
+                <button className="btn-small" onClick={() => avancerCommande(order)}>→ {PROCHAIN_STATUT[order.status]}</button>
+              )}
+            </div>
+          ))}
+          {orders.length === 0 && <div className="dash-empty">Aucune commande.</div>}
+        </div>
+      )}
+
+      {onglet === "offres" && (
+        <div className="dash-table">
+          {offres.map((offre) => (
+            <div key={offre.id} className="dash-row">
+              <div>
+                <strong>{offre.clientNom}</strong> — {offre.produitNom} — <strong>{offre.montant?.toLocaleString("fr-FR")} FCFA</strong>
+                <span className={`badge-status ${statutSlug(offre.status)}`}>{offre.status}</span>
+                <div className="dash-cat">Vendeur : {offre.vendeurNom || "—"}</div>
+              </div>
+              {offre.status === "en_attente" && (
+                <div className="dash-row-actions">
+                  <button className="btn-small" onClick={() => statutOffre(offre, "acceptée")}>✅ Accepter</button>
+                  <button className="btn-small btn-danger" onClick={() => statutOffre(offre, "refusée")}>❌ Refuser</button>
+                </div>
+              )}
+            </div>
+          ))}
+          {offres.length === 0 && <div className="dash-empty">Aucune offre pour le moment.</div>}
+        </div>
+      )}
+
+      {onglet === "utilisateurs" && (
+        <>
+          <input className="search-bar" placeholder="Rechercher un utilisateur…" value={rechercheUser} onChange={(e) => setRechercheUser(e.target.value)} style={{ marginBottom: 16 }} />
+          <div className="dash-table">
+            {usersFiltres.map((u) => (
+              <div key={u.id} className="dash-row">
+                <div>
+                  <strong>{u.nom || "N/A"}</strong> — {u.email}
+                  <span className={`badge-status ${u.role}`}>{ROLES.find((r) => r.id === u.role)?.label || u.role}</span>
+                  {u.id === admin.uid && <span className="role-badge">moi</span>}
+                </div>
+                <select
+                  className="filter-select"
+                  value={u.role || "client"}
+                  disabled={u.id === admin.uid}
+                  onChange={(e) => changerRole(u, e.target.value)}
+                  aria-label={`Rôle de ${u.nom || u.email}`}
+                >
+                  {ROLES.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+                </select>
+              </div>
+            ))}
+            {usersFiltres.length === 0 && <div className="dash-empty">Aucun utilisateur trouvé.</div>}
+          </div>
+        </>
+      )}
 
       {showForm && (
         <div className="modal-overlay" onClick={() => setShowForm(false)}>
           <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={handleSubmit}>
             <h3>{editProd ? "Modifier" : "Ajouter"} un produit</h3>
-            <input placeholder="Nom" value={form.nom} onChange={(e) => setForm({ ...form, nom: e.target.value })} required />
-            <input type="number" placeholder="Prix (FCFA)" value={form.prix} onChange={(e) => setForm({ ...form, prix: e.target.value })} required />
+            <input placeholder="Nom du produit" value={form.nom} onChange={(e) => setForm({ ...form, nom: e.target.value })} required />
+            <input type="number" min="1" placeholder="Prix (FCFA)" value={form.prix} onChange={(e) => setForm({ ...form, prix: e.target.value })} required />
             <select value={form.categorie} onChange={(e) => setForm({ ...form, categorie: e.target.value })}>
-              <option value="Homme">Homme</option>
-              <option value="Femme">Femme</option>
-              <option value="Accessoires">Accessoires</option>
+              <option>Homme</option><option>Femme</option><option>Accessoires</option>
             </select>
-            <input placeholder="Tailles (S, M, L, XL)" value={form.tailles} onChange={(e) => setForm({ ...form, tailles: e.target.value })} />
+            <input placeholder="Tailles (S, M, L)" value={form.tailles} onChange={(e) => setForm({ ...form, tailles: e.target.value })} />
+            <input type="number" min="0" placeholder="Stock" value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value })} />
             <input placeholder="URL image" value={form.image} onChange={(e) => setForm({ ...form, image: e.target.value })} />
             <div className="modal-actions">
               <button type="button" className="btn-clear" onClick={() => setShowForm(false)}>Annuler</button>
@@ -209,74 +430,6 @@ function Dashboard() {
           </form>
         </div>
       )}
-
-      <h3>Produits ({products.length})</h3>
-      <div className="dash-table">
-        {products.slice(0, 10).map((p) => (
-          <div key={p.id} className="dash-row">
-            <span><strong>{p.nom}</strong> — {p.prix?.toLocaleString()} FCFA <span className="dash-cat">{p.categorie}</span></span>
-            <div className="dash-row-actions">
-              <button className="btn-small" onClick={() => openEdit(p)}>Modifier</button>
-              <button className="btn-small btn-danger" onClick={() => handleDelete(p.id)}>Supprimer</button>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <h3 style={{ marginTop: 32 }}>Commandes récentes</h3>
-      <div className="dash-table">
-        {orders.slice(0, 10).map((order) => (
-          <div key={order.id} className="dash-row">
-            <div>
-              <strong>#{order.id?.slice(0, 8)}</strong> — {order.client?.nom} — {order.total?.toLocaleString()} FCFA
-              <span className={`badge-status ${order.status?.toLowerCase()}`}>{order.status}</span>
-            </div>
-            {nextStatus[order.status] && (
-              <button className="btn-small" onClick={() => handleStatus(order)}>→ {nextStatus[order.status]}</button>
-            )}
-          </div>
-        ))}
-      </div>
-
-      <h3 style={{ marginTop: 32 }}>Offres des clients ({offres.length})</h3>
-      <div className="dash-table">
-        {offres.slice(0, 20).map((offre) => (
-          <div key={offre.id} className="dash-row">
-            <div>
-              <strong>{offre.clientNom}</strong> — {offre.produitNom} — <strong>{offre.montant?.toLocaleString()} FCFA</strong>
-              <span className={`badge-status ${offre.status?.toLowerCase()}`}>{offre.status}</span>
-            </div>
-            {offre.status === "en_attente" && (
-              <div className="dash-row-actions">
-                <button className="btn-small" onClick={() => handleOffreStatus(offre, "acceptée")}>✅ Accepter</button>
-                <button className="btn-small btn-danger" onClick={() => handleOffreStatus(offre, "refusée")}>❌ Refuser</button>
-              </div>
-            )}
-          </div>
-        ))}
-        {offres.length === 0 && <p className="no-results" style={{ padding: 16 }}>Aucune offre pour le moment</p>}
-      </div>
-
-      <h3 style={{ marginTop: 32 }}>Utilisateurs ({users.length})</h3>
-      <div className="dash-table">
-        {users.map((u) => (
-          <div key={u.id} className="dash-row">
-            <div>
-              <strong>{u.nom || "N/A"}</strong> — {u.email}
-              <span className={`badge-status ${u.role}`}>{u.role}</span>
-            </div>
-            {u.role !== "admin" && (
-              <div className="dash-row-actions">
-                <button className="btn-small" onClick={() => handleRoleChange(u, u.role === "vendeur" ? "client" : "vendeur")}>
-                  Passer {u.role === "vendeur" ? "client" : "vendeur"}
-                </button>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
-
-export default Dashboard;

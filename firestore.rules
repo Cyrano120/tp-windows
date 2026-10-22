@@ -1,0 +1,177 @@
+rules_version = '2';
+
+/**
+ * Règles Firestore Cyrano — modèle « moindre privilège ».
+ * Remplace le mode test grand ouvert : toute écriture non explicitement
+ * autorisée ci-dessous est refusée.
+ */
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function connecte() {
+      return request.auth != null;
+    }
+
+    function role() {
+      return get(/databases/$(database)/documents/utilisateurs/$(request.auth.uid)).data.role;
+    }
+
+    function estAdmin() {
+      // Le compte de bootstrap reste admin même si son document a été créé
+      // avec un ID auto-généré (ancienne donnée).
+      return connecte() && (
+        request.auth.token.email == 'admin@cyrano.com'
+        || role() == 'admin'
+      );
+    }
+
+    /* ---------- UTILISATEURS ---------- */
+    match /utilisateurs/{uid} {
+      // Lecture de son propre document, de tous les documents pour l'admin,
+      // et compatibilité avec les anciens documents créés avec un ID auto-généré
+      // (retrouvés par email, puis migrés vers l'UID).
+      allow read: if connecte() && (
+        request.auth.uid == uid
+        || estAdmin()
+        || resource.data.email == request.auth.token.email
+      );
+
+      // Un utilisateur ne peut créer que SON profil. Il ne peut pas se donner
+      // le rôle admin, sauf le compte de bootstrap admin@cyrano.com.
+      allow create: if connecte()
+        && request.auth.uid == uid
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.role in ['client', 'vendeur', 'admin']
+        && (
+          request.resource.data.role in ['client', 'vendeur']
+          || request.auth.token.email == 'admin@cyrano.com'
+        );
+
+      // L'admin gère les rôles. Un utilisateur peut modifier son profil mais
+      // jamais son propre rôle.
+      allow update: if estAdmin()
+        || (
+          connecte()
+          && request.auth.uid == uid
+          && request.resource.data.role == resource.data.role
+        );
+
+      allow delete: if estAdmin() || (connecte() && request.auth.uid == uid);
+    }
+
+    /* ---------- PRODUITS ---------- */
+    match /produits/{produitId} {
+      allow read: if true;
+
+      allow create: if connecte()
+        && (request.resource.data.vendeurId == request.auth.uid || estAdmin())
+        && request.resource.data.prix is number
+        && request.resource.data.prix > 0;
+
+      // Un vendeur ne peut modifier que ses produits et ne peut pas
+      // se réapproprier un produit appartenant à quelqu'un d'autre.
+      allow update: if estAdmin()
+        || (
+          connecte()
+          && resource.data.vendeurId == request.auth.uid
+          && request.resource.data.vendeurId == resource.data.vendeurId
+        );
+
+      allow delete: if estAdmin()
+        || (connecte() && resource.data.vendeurId == request.auth.uid);
+    }
+
+    /* ---------- OFFRES ---------- */
+    match /offres/{offreId} {
+      allow read: if connecte() && (
+        resource.data.clientId == request.auth.uid
+        || resource.data.vendeurId == request.auth.uid
+        || estAdmin()
+      );
+
+      allow create: if connecte()
+        && request.resource.data.clientId == request.auth.uid
+        && request.resource.data.status == 'en_attente'
+        && request.resource.data.montant is number
+        && request.resource.data.montant > 0
+        && request.resource.data.vendeurId != request.auth.uid;
+
+      // Seul le vendeur concerné (ou l'admin) peut accepter/refuser.
+      allow update: if estAdmin()
+        || (
+          connecte()
+          && resource.data.vendeurId == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+          && request.resource.data.status in ['acceptée', 'refusée']
+        );
+
+      allow delete: if estAdmin();
+    }
+
+    /* ---------- COMMANDES ---------- */
+    match /commandes/{commandeId} {
+      allow read: if connecte() && (
+        resource.data.get('clientId', '') == request.auth.uid
+        || request.auth.uid in resource.data.get('vendeurs', [])
+        || estAdmin()
+      );
+
+      // Le client crée sa commande ; il ne peut pas y inclure un de ses
+      // propres articles, ni contourner les montants (contrôlés côté app).
+      allow create: if connecte()
+        && request.resource.data.clientId == request.auth.uid
+        && !(request.auth.uid in request.resource.data.vendeurs)
+        && request.resource.data.articles.size() > 0
+        && request.resource.data.total is number
+        && request.resource.data.total >= 0
+        && request.resource.data.status == 'Reçue';
+
+      allow update: if estAdmin()
+        || (
+          connecte()
+          && request.auth.uid in resource.data.get('vendeurs', [])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+          && request.resource.data.status in ['En cours', 'Expédiée', 'Livrée']
+        );
+
+      allow delete: if estAdmin();
+    }
+
+    /* ---------- AVIS ---------- */
+    match /avis/{avisId} {
+      allow read: if true;
+
+      allow create: if connecte()
+        && request.resource.data.clientId == request.auth.uid
+        && request.resource.data.note is number
+        && request.resource.data.note >= 1
+        && request.resource.data.note <= 5
+        && request.resource.data.texte is string
+        && request.resource.data.texte.size() >= 5
+        && request.resource.data.texte.size() <= 1000;
+
+      allow update, delete: if estAdmin()
+        || (connecte() && resource.data.clientId == request.auth.uid);
+    }
+
+    /* ---------- CONVERSATIONS (messagerie temps réel) ---------- */
+    match /conversations/{conversationId} {
+      allow read: if connecte() && request.auth.uid in resource.data.participants;
+      allow create: if connecte() && request.auth.uid in request.resource.data.participants;
+      allow update: if connecte() && request.auth.uid in resource.data.participants;
+      allow delete: if estAdmin();
+    }
+
+    /* ---------- FAVORIS ---------- */
+    match /favoris/{favoriId} {
+      allow read: if connecte() && resource.data.uid == request.auth.uid;
+      allow create: if connecte() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if connecte() && resource.data.uid == request.auth.uid;
+    }
+
+    /* ---------- REFUS PAR DÉFAUT ---------- */
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

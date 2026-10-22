@@ -7,6 +7,14 @@ export default function useInfiniteScroll(items, perPage = 8) {
   const displayed = items.slice(0, page * perPage);
   const hasMore = displayed.length < items.length;
 
+  // Repart de la première page dès que les filtres changent le jeu de résultats.
+  useEffect(() => {
+    // Synchronisation volontaire avec une nouvelle liste de résultats.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPage(1);
+    setLoadingMore(false);
+  }, [items]);
+
   useEffect(() => {
     const onScroll = () => {
       if (loadingMore || !hasMore) return;

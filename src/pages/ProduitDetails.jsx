@@ -1,192 +1,349 @@
-import { useParams, Link } from "react-router-dom";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useParams } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { addDoc, collection, doc, getDoc, getDocs, query, serverTimestamp, where } from "firebase/firestore";
 import { db } from "../firebase/firebase";
 import { addToCart } from "../store/cartSlice";
 import { toggleFavorite } from "../store/favoritesSlice";
 import { sendMessage } from "../store/messagesSlice";
-import { ajouterAvis } from "../store/avisSlice";
 import { addOffre } from "../store/offresSlice";
+import ArticleCard from "../components/ArticleCard";
+import { PageLoader } from "../components/RequireAuth";
+import { PRODUITS, normaliserProduit } from "../data/catalogue";
 import toast from "react-hot-toast";
 
-const products = [
-  { id: "1", nom: "Chemise élégante", categorie: "Homme", prix: 15000, image: "https://images.unsplash.com/photo-1596755094514-f87e34085b2c?w=600&h=600&fit=crop", tailles: ["S", "M", "L", "XL"], desc: "Chemise en coton premium, idéale pour les occasions spéciales. Coupe moderne et confortable.", vendeur: "Alice Mode", ville: "Libreville", note: 4.8, avis: 23 },
-  { id: "2", nom: "Robe fleurie", categorie: "Femme", prix: 22000, image: "https://images.unsplash.com/photo-1572804013309-59a88b7e92f1?w=600&h=600&fit=crop", tailles: ["S", "M", "L"], desc: "Robe légère à motif floral parfaite pour l'été. Tissu respirant.", vendeur: "Style Féminin", ville: "Port-Gentil", note: 4.9, avis: 31 },
-  { id: "3", nom: "Jean slim", categorie: "Homme", prix: 18000, image: "https://images.unsplash.com/photo-1542272454315-4c01d7abdf4a?w=600&h=600&fit=crop", tailles: ["38", "40", "42"], desc: "Jean slim stretch noir. Confort optimal.", vendeur: "Jean K.", ville: "Franceville", note: 4.6, avis: 15 },
-  { id: "4", nom: "Sac à main", categorie: "Accessoires", prix: 25000, image: "https://images.unsplash.com/photo-1584917865442-de89df76afd3?w=600&h=600&fit=crop", tailles: [], desc: "Sac en cuir véritable. Compartiments multiples.", vendeur: "Accessoires Plus", ville: "Libreville", note: 4.7, avis: 19 },
-  { id: "5", nom: "Montre connectée", categorie: "Accessoires", prix: 35000, image: "https://images.unsplash.com/photo-1546868871-af0de0ae72ba?w=600&h=600&fit=crop", tailles: [], desc: "Écran AMOLED, suivi d'activité, notifications.", vendeur: "Tech Wear", ville: "Libreville", note: 4.5, avis: 42 },
-  { id: "6", nom: "T-shirt design", categorie: "Homme", prix: 8000, image: "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=600&h=600&fit=crop", tailles: ["S", "M", "L", "XL"], desc: "100% coton bio, motif original.", vendeur: "Urban Style", ville: "Oyem", note: 4.4, avis: 8 },
-  { id: "7", nom: "Jupe courte", categorie: "Femme", prix: 12000, image: "https://images.unsplash.com/photo-1583496661160-fb5886a0aaaa?w=600&h=600&fit=crop", tailles: ["S", "M", "L"], desc: "Jupe en denim léger, look casual.", vendeur: "Style Féminin", ville: "Port-Gentil", note: 4.3, avis: 11 },
-  { id: "8", nom: "Costume cravate", categorie: "Homme", prix: 45000, image: "https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=600&h=600&fit=crop", tailles: ["M", "L", "XL"], desc: "Costume complet avec cravate assortie.", vendeur: "Alice Mode", ville: "Libreville", note: 4.9, avis: 27 },
-  { id: "9", nom: "Lunettes de soleil", categorie: "Accessoires", prix: 15000, image: "https://images.unsplash.com/photo-1572635196237-14b3f281503f?w=600&h=600&fit=crop", tailles: [], desc: "Polarisées anti-UV, monture légère.", vendeur: "Accessoires Plus", ville: "Libreville", note: 4.2, avis: 6 },
-  { id: "10", nom: "Chaussures sport", categorie: "Homme", prix: 28000, image: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=600&h=600&fit=crop", tailles: ["40", "41", "42", "43"], desc: "Semelle amortissante, design moderne.", vendeur: "Urban Style", ville: "Oyem", note: 4.6, avis: 34 },
-  { id: "11", nom: "Veste en cuir", categorie: "Femme", prix: 55000, image: "https://images.unsplash.com/photo-1551028719-00167b16eac5?w=600&h=600&fit=crop", tailles: ["S", "M", "L"], desc: "Cuir véritable, doublure soyeuse.", vendeur: "Style Féminin", ville: "Port-Gentil", note: 4.8, avis: 16 },
-  { id: "12", nom: "Casquette street", categorie: "Accessoires", prix: 7000, image: "https://images.unsplash.com/photo-1588850561407-ed78c282e89b?w=600&h=600&fit=crop", tailles: [], desc: "Ajustable, broderie originale.", vendeur: "Urban Style", ville: "Oyem", note: 4.1, avis: 5 },
-];
+const ICON_HEART = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z" strokeLinejoin="round" />
+  </svg>
+);
 
-function ProduitDetails() {
+const ICON_SHIELD = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M12 3 4 6v6c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V6l-8-3Z" strokeLinejoin="round" />
+    <path d="m9 12 2 2 4-4" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+const ICON_TRUCK = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M3 7h11v10H3zM14 10h4l3 3v4h-7" strokeLinejoin="round" />
+    <circle cx="7" cy="18" r="1.6" /><circle cx="17.5" cy="18" r="1.6" />
+  </svg>
+);
+
+const ICON_LOCK = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <rect x="5" y="10" width="14" height="10" rx="2" />
+    <path d="M8 10V7a4 4 0 0 1 8 0v3" strokeLinecap="round" />
+  </svg>
+);
+
+export default function ProduitDetails() {
   const { id } = useParams();
   const dispatch = useDispatch();
-  const user = useSelector((state) => state.auth.user);
-  const favorites = useSelector((state) => state.favorites.items);
-  const allAvis = useSelector((state) => state.avis.items);
-  const [selectedSize, setSelectedSize] = useState("");
-  const [offer, setOffer] = useState("");
-  const [showMsg, setShowMsg] = useState(false);
-  const [msg, setMsg] = useState("");
-  const [newNote, setNewNote] = useState(5);
-  const [newComment, setNewComment] = useState("");
+  const user = useSelector((s) => s.auth.user);
+  const favoris = useSelector((s) => s.favorites.items);
+  const produitsStore = useSelector((s) => s.products.items);
 
-  const firestoreProducts = useSelector((state) => state.products.items);
-  const raw = products.find((p) => p.id === id) || firestoreProducts.find((p) => p.id === id);
-  if (!raw) return <div className="loading">Produit introuvable</div>;
-  const product = { ...raw, vendeur: raw.vendeur || raw.vendeurNom || "Vendeur", ville: raw.ville || "", note: raw.note || 0, avis: raw.avis || 0 };
+  const local = useMemo(() => PRODUITS.find((p) => String(p.id) === String(id)), [id]);
+  const [produit, setProduit] = useState(() => (local ? normaliserProduit(local) : null));
+  const [chargement, setChargement] = useState(!local);
+  const [taille, setTaille] = useState("");
+  const [offre, setOffre] = useState("");
+  const [message, setMessage] = useState("");
+  const [voirMessage, setVoirMessage] = useState(false);
+  const [avisFirestore, setAvisFirestore] = useState([]);
+  const [note, setNote] = useState(5);
+  const [commentaire, setCommentaire] = useState("");
+  const [envoi, setEnvoi] = useState(false);
 
-  const isFav = favorites.some((f) => f.id === product.id);
-  const productAvis = allAvis.filter((a) => a.produitId === product.id);
-  const avgNote = productAvis.length ? (productAvis.reduce((s, a) => s + a.note, 0) / productAvis.length).toFixed(1) : product.note;
+  useEffect(() => {
+    let actif = true;
+    const depuisStore = produitsStore.find((p) => String(p.id) === String(id));
+    if (depuisStore) {
+      // Synchronisation avec le store Redux (produit chargé par le catalogue).
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setProduit(normaliserProduit(depuisStore));
+      setChargement(false);
+      return;
+    }
+    if (local) return;
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, "produits", id));
+        if (actif) setProduit(snap.exists() ? normaliserProduit({ id: snap.id, ...snap.data() }) : null);
+      } catch {
+        if (actif) setProduit(null);
+      } finally {
+        if (actif) setChargement(false);
+      }
+    })();
+    return () => { actif = false; };
+  }, [id, local, produitsStore]);
 
-  const handleBuy = () => {
-    if (!selectedSize && product.tailles.length > 0) return toast.error("Sélectionne une taille");
-    dispatch(addToCart({ ...product, taille: selectedSize }));
+  useEffect(() => {
+    let actif = true;
+    getDocs(query(collection(db, "avis"), where("produitId", "==", String(id))))
+      .then((snap) => actif && setAvisFirestore(snap.docs.map((d) => ({ id: d.id, ...d.data() }))))
+      .catch(() => {});
+    return () => { actif = false; };
+  }, [id]);
+
+  if (chargement) return <PageLoader label="Chargement de l'article…" />;
+
+  if (!produit) {
+    return (
+      <div className="empty-state">
+        <span className="empty-emoji">🧐</span>
+        <h2>Article introuvable</h2>
+        <p>Cet article a peut-être été vendu ou retiré du catalogue.</p>
+        <Link to="/catalogue" className="btn-primary">Retour au catalogue</Link>
+      </div>
+    );
+  }
+
+  const estFavori = favoris.some((f) => f.id === produit.id);
+  const avis = avisFirestore;
+  const noteMoyenne = avis.length
+    ? (avis.reduce((s, a) => s + Number(a.note || 0), 0) / avis.length).toFixed(1)
+    : produit.note;
+
+  const similaires = PRODUITS
+    .map(normaliserProduit)
+    .filter((p) => p.categorie === produit.categorie && String(p.id) !== String(produit.id))
+    .slice(0, 4);
+
+  const ajouterAuPanier = () => {
+    if (produit.tailles.length > 0 && !taille) return toast.error("Sélectionne une taille.");
+    dispatch(addToCart({ ...produit, taille }));
     toast.success("Ajouté au panier !");
   };
 
-  const handleOffer = async () => {
-    if (!offer) return;
-    if (!user) return toast.error("Connecte-toi pour faire une offre");
+  const envoyerOffre = async () => {
+    if (!user) return toast.error("Connecte-toi pour faire une offre.");
+    const montant = Number(offre);
+    if (!montant || montant <= 0) return toast.error("Saisis un montant valide.");
+    if (montant >= produit.prix) return toast.error("Ton offre doit être inférieure au prix affiché.");
+    setEnvoi(true);
     try {
-      const offreData = {
-        produitId: product.id,
-        produitNom: product.nom,
+      const data = {
+        produitId: String(produit.id),
+        produitNom: produit.nom,
         clientId: user.uid,
         clientNom: user.nom || user.email,
-        montant: Number(offer),
+        montant,
         status: "en_attente",
-        date: serverTimestamp(),
-        vendeurId: product.vendeurId || null,
-        vendeurNom: product.vendeurNom || product.vendeur || null,
+        date: new Date().toISOString(),
+        createdAt: serverTimestamp(),
+        vendeurId: produit.vendeurId || null,
+        vendeurNom: produit.vendeur,
       };
-      const ref = await addDoc(collection(db, "offres"), offreData);
-      dispatch(addOffre({ id: ref.id, ...offreData }));
-      toast.success(`Offre de ${Number(offer).toLocaleString()} FCFA envoyée au vendeur !`);
-      setOffer("");
+      const ref = await addDoc(collection(db, "offres"), data);
+      dispatch(addOffre({ id: ref.id, ...data }));
+      toast.success(`Offre de ${montant.toLocaleString("fr-FR")} FCFA envoyée !`);
+      setOffre("");
     } catch {
-      toast.error("Erreur lors de l'envoi de l'offre");
+      toast.error("Erreur lors de l'envoi de l'offre.");
+    } finally {
+      setEnvoi(false);
     }
   };
 
-  const handleMessage = () => {
-    if (!user) return toast.error("Connecte-toi pour envoyer un message");
-    if (!msg) return;
-    dispatch(sendMessage({ productId: product.id, productName: product.nom, from: user.email, to: product.vendeur, text: msg }));
+  const envoyerMessage = () => {
+    if (!user) return toast.error("Connecte-toi pour envoyer un message.");
+    if (!message.trim()) return;
+    dispatch(sendMessage({
+      productId: produit.id,
+      productName: produit.nom,
+      from: user.email,
+      to: produit.vendeur,
+      text: message.trim(),
+    }));
     toast.success("Message envoyé !");
-    setMsg(""); setShowMsg(false);
+    setMessage("");
+    setVoirMessage(false);
   };
 
-  const handleAvis = (e) => {
+  const publierAvis = async (e) => {
     e.preventDefault();
-    if (!user) return toast.error("Connecte-toi pour laisser un avis");
-    dispatch(ajouterAvis({ produitId: product.id, auteur: user.nom || user.email, note: newNote, texte: newComment }));
-    toast.success("Avis ajouté !");
-    setNewComment(""); setNewNote(5);
+    if (!user) return toast.error("Connecte-toi pour laisser un avis.");
+    if (commentaire.trim().length < 5) return toast.error("Ton avis est trop court.");
+    setEnvoi(true);
+    try {
+      const data = {
+        produitId: String(produit.id),
+        clientId: user.uid,
+        auteur: user.nom || user.email,
+        note,
+        texte: commentaire.trim(),
+        date: new Date().toISOString(),
+        createdAt: serverTimestamp(),
+      };
+      const ref = await addDoc(collection(db, "avis"), data);
+      setAvisFirestore((prev) => [{ id: ref.id, ...data }, ...prev]);
+      toast.success("Merci pour ton avis !");
+      setCommentaire("");
+      setNote(5);
+    } catch {
+      toast.error("Erreur lors de la publication.");
+    } finally {
+      setEnvoi(false);
+    }
   };
 
   return (
     <div className="detail">
-      <Link to="/catalogue" className="back-link">← Retour au catalogue</Link>
+      <nav className="breadcrumb" aria-label="Fil d'Ariane">
+        <Link to="/">Accueil</Link><span>/</span>
+        <Link to="/catalogue">Catalogue</Link><span>/</span>
+        <Link to={`/catalogue?cat=${produit.categorie}`}>{produit.categorie}</Link><span>/</span>
+        <span style={{ color: "var(--c-text)" }}>{produit.nom}</span>
+      </nav>
+
       <div className="detail-grid">
-        <div className="detail-img">
-          <img src={product.image} alt={product.nom} />
-        </div>
-        <div className="detail-info">
-          <div className="detail-header">
-            <h1>{product.nom}</h1>
-            <button className={`fav-btn ${isFav ? "active" : ""}`} onClick={() => dispatch(toggleFavorite(product))}>
-              {isFav ? "❤️" : "🤍"}
+        <div>
+          <div className="detail-img">
+            <img src={produit.image} alt={produit.nom} />
+            <button
+              className={`article-fav ${estFavori ? "active" : ""}`}
+              onClick={() => {
+                dispatch(toggleFavorite(produit));
+                toast.success(estFavori ? "Retiré des favoris" : "Ajouté aux favoris");
+              }}
+              aria-label={estFavori ? "Retirer des favoris" : "Ajouter aux favoris"}
+              aria-pressed={estFavori}
+            >
+              {ICON_HEART}
             </button>
           </div>
-          <p className="detail-price">{product.prix.toLocaleString()} FCFA</p>
-          <p className="detail-desc">{product.desc}</p>
+          <div className="trust-row">
+            <div className="trust-item">{ICON_SHIELD}<span>Protection acheteur</span></div>
+            <div className="trust-item">{ICON_TRUCK}<span>Livraison suivie</span></div>
+            <div className="trust-item">{ICON_LOCK}<span>Paiement sécurisé</span></div>
+          </div>
+        </div>
 
-          <Link to={`/vendeur/${encodeURIComponent(product.vendeur)}`} className="detail-vendeur">
-            <div className="vendeur-avatar">{product.vendeur.charAt(0)}</div>
+        <div className="detail-panel">
+          <div className="detail-header">
+            <h1>{produit.nom}</h1>
+            <span className={`badge-etat ${/neuf/i.test(produit.etat) ? "neuf" : ""}`}>{produit.etat}</span>
+          </div>
+
+          <p className="detail-price">{produit.prix.toLocaleString("fr-FR")} FCFA</p>
+          <p className="detail-sub">
+            {produit.marque && `${produit.marque} · `}{produit.categorie}
+            {produit.stock > 0 ? " · En stock" : " · Épuisé"}
+          </p>
+
+          <Link to={`/vendeur/${encodeURIComponent(produit.vendeur)}`} className="detail-vendeur">
+            <div className="vendeur-avatar">{produit.vendeur.charAt(0).toUpperCase()}</div>
             <div>
-              <strong>{product.vendeur}</strong>
-              <p>{product.ville} · ⭐ {product.note} ({product.avis} avis)</p>
+              <strong>{produit.vendeur}</strong>
+              <p>{produit.ville || "Gabon"} · ★ {noteMoyenne} {avis.length ? `(${avis.length} avis)` : ""}</p>
             </div>
+            <span className="chevron" aria-hidden="true">›</span>
           </Link>
 
-          {product.tailles.length > 0 && (
+          <p className="detail-desc">{produit.desc}</p>
+
+          {produit.tailles.length > 0 && (
             <div className="detail-sizes">
-              <p>Taille :</p>
+              <p>Taille</p>
               <div className="size-selector">
-                {product.tailles.map((t) => (
-                  <button key={t} className={`size-btn ${selectedSize === t ? "active" : ""}`} onClick={() => setSelectedSize(t)}>{t}</button>
+                {produit.tailles.map((t) => (
+                  <button key={t} className={`size-btn ${taille === t ? "active" : ""}`} onClick={() => setTaille(t)} aria-pressed={taille === t}>{t}</button>
                 ))}
               </div>
             </div>
           )}
 
-          <button className="btn-primary btn-lg btn-block" onClick={handleBuy}>Ajouter au panier</button>
-          <div className="detail-actions">
-            <button className="btn-secondary btn-block" onClick={() => setShowMsg(!showMsg)}>💬 Contacter le vendeur</button>
-          </div>
-
-          {showMsg && (
-            <div className="msg-box">
-              <textarea placeholder={`Écrire à ${product.vendeur}...`} value={msg} onChange={(e) => setMsg(e.target.value)} />
-              <button className="btn-primary" onClick={handleMessage}>Envoyer</button>
+          <div className="buy-box">
+            <button className="btn-primary btn-lg btn-block" onClick={ajouterAuPanier} disabled={produit.stock === 0}>
+              {produit.stock === 0 ? "Article épuisé" : "Ajouter au panier"}
+            </button>
+            <div className="detail-actions">
+              <button className="btn-secondary btn-block" onClick={() => setVoirMessage((v) => !v)}>💬 Contacter le vendeur</button>
             </div>
-          )}
+            {voirMessage && (
+              <div className="msg-box">
+                <textarea
+                  placeholder={`Écrire à ${produit.vendeur}…`}
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  aria-label="Message au vendeur"
+                />
+                <button className="btn-primary btn-sm" onClick={envoyerMessage}>Envoyer</button>
+              </div>
+            )}
 
-          <div className="offer-box">
-            <p>💰 Faire une offre :</p>
-            <div className="offer-input">
-              <input type="number" placeholder="Votre prix" value={offer} onChange={(e) => setOffer(e.target.value)} />
-              <button className="btn-secondary" onClick={handleOffer}>Envoyer</button>
-            </div>
-          </div>
-
-          <div className="payment-mock">
-            <p>💳 Paiement mobile</p>
-            <div className="payment-options">
-              <button className="payment-btn" onClick={() => toast.success("🔵 Paiement Airtel Money simulé !")}>📱 Airtel Money</button>
-              <button className="payment-btn" onClick={() => toast.success("🟢 Paiement Moov Money simulé !")}>📱 Moov Money</button>
+            <div className="offer-box">
+              <p>💰 Faire une offre au vendeur</p>
+              <div className="offer-input">
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min="1"
+                  max={produit.prix - 1}
+                  placeholder="Ton prix en FCFA"
+                  value={offre}
+                  onChange={(e) => setOffre(e.target.value)}
+                  aria-label="Montant de ton offre"
+                />
+                <button className="btn-secondary" onClick={envoyerOffre} disabled={envoi}>Envoyer</button>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="avis-section-detail">
-        <h2>Avis ({productAvis.length})</h2>
+      <section className="avis-section-detail">
+        <h2>Avis {avis.length > 0 ? `(${avis.length})` : ""}</h2>
+
         {user && (
-          <form className="avis-form" onSubmit={handleAvis}>
-            <div className="avis-stars">
+          <form className="avis-form" onSubmit={publierAvis}>
+            <div className="avis-stars" role="radiogroup" aria-label="Note">
               {[1, 2, 3, 4, 5].map((s) => (
-                <span key={s} className={`star ${s <= newNote ? "active" : ""}`} onClick={() => setNewNote(s)}>★</span>
+                <button
+                  type="button"
+                  key={s}
+                  className={`star ${s <= note ? "active" : ""}`}
+                  onClick={() => setNote(s)}
+                  aria-label={`${s} étoile${s > 1 ? "s" : ""}`}
+                  aria-pressed={s <= note}
+                >
+                  ★
+                </button>
               ))}
             </div>
-            <textarea placeholder="Ton avis..." value={newComment} onChange={(e) => setNewComment(e.target.value)} required />
-            <button className="btn-primary" type="submit">Publier</button>
+            <textarea placeholder="Partage ton expérience sur cet article…" value={commentaire} onChange={(e) => setCommentaire(e.target.value)} required />
+            <button className="btn-primary" type="submit" disabled={envoi}>Publier mon avis</button>
           </form>
         )}
+
         <div className="avis-list">
-          {productAvis.map((a) => (
+          {avis.length === 0 && <p className="no-results">Aucun avis pour le moment. Sois le premier !</p>}
+          {avis.map((a) => (
             <div key={a.id} className="avis-item">
               <div className="avis-item-header">
                 <strong>{a.auteur}</strong>
-                <span>{'★'.repeat(a.note)}{'☆'.repeat(5 - a.note)}</span>
+                <span aria-label={`${a.note} sur 5`}>{"★".repeat(a.note)}{"☆".repeat(5 - a.note)}</span>
               </div>
               <p>{a.texte}</p>
-              <span className="avis-date">{a.date}</span>
+              <span className="avis-date">{a.date ? new Date(a.date).toLocaleDateString("fr-FR") : ""}</span>
             </div>
           ))}
         </div>
-      </div>
+      </section>
+
+      {similaires.length > 0 && (
+        <section className="similar-section">
+          <h2>Articles similaires</h2>
+          <div className="products-grid">
+            {similaires.map((p) => <ArticleCard key={p.id} produit={p} />)}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
-
-export default ProduitDetails;

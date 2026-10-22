@@ -1,37 +1,20 @@
-import { useState, useEffect, useMemo } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "../firebase/firebase";
 import { setProducts } from "../store/productsSlice";
-import CarreFav from "../components/CarreFav";
+import ArticleCard from "../components/ArticleCard";
 import useInfiniteScroll from "../hooks/useInfiniteScroll";
-
-const produitsExemple = [
-  { id: "1", nom: "Chemise élégante", categorie: "Homme", prix: 15000, image: "https://images.unsplash.com/photo-1596755094514-f87e34085b2c?w=400&h=400&fit=crop", tailles: ["S", "M", "L", "XL"] },
-  { id: "2", nom: "Robe fleurie", categorie: "Femme", prix: 22000, image: "https://images.unsplash.com/photo-1572804013309-59a88b7e92f1?w=400&h=400&fit=crop", tailles: ["S", "M", "L"] },
-  { id: "3", nom: "Jean slim", categorie: "Homme", prix: 18000, image: "https://images.unsplash.com/photo-1542272454315-4c01d7abdf4a?w=400&h=400&fit=crop", tailles: ["38", "40", "42"] },
-  { id: "4", nom: "Sac à main", categorie: "Accessoires", prix: 25000, image: "https://images.unsplash.com/photo-1584917865442-de89df76afd3?w=400&h=400&fit=crop", tailles: [] },
-  { id: "5", nom: "Montre connectée", categorie: "Accessoires", prix: 35000, image: "https://images.unsplash.com/photo-1546868871-af0de0ae72ba?w=400&h=400&fit=crop", tailles: [] },
-  { id: "6", nom: "T-shirt design", categorie: "Homme", prix: 8000, image: "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=400&h=400&fit=crop", tailles: ["S", "M", "L", "XL"] },
-  { id: "7", nom: "Jupe courte", categorie: "Femme", prix: 12000, image: "https://images.unsplash.com/photo-1583496661160-fb5886a0aaaa?w=400&h=400&fit=crop", tailles: ["S", "M", "L"] },
-  { id: "8", nom: "Costume cravate", categorie: "Homme", prix: 45000, image: "https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=400&h=400&fit=crop", tailles: ["M", "L", "XL"] },
-  { id: "9", nom: "Lunettes de soleil", categorie: "Accessoires", prix: 15000, image: "https://images.unsplash.com/photo-1572635196237-14b3f281503f?w=400&h=400&fit=crop", tailles: [] },
-  { id: "10", nom: "Chaussures sport", categorie: "Homme", prix: 28000, image: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=400&h=400&fit=crop", tailles: ["40", "41", "42", "43"] },
-  { id: "11", nom: "Veste en cuir", categorie: "Femme", prix: 55000, image: "https://images.unsplash.com/photo-1551028719-00167b16eac5?w=400&h=400&fit=crop", tailles: ["S", "M", "L"] },
-  { id: "12", nom: "Casquette street", categorie: "Accessoires", prix: 7000, image: "https://images.unsplash.com/photo-1588850561407-ed78c282e89b?w=400&h=400&fit=crop", tailles: [] },
-];
-
-const categories = ["Toutes", "Homme", "Femme", "Accessoires"];
-const allSizes = ["S", "M", "L", "XL", "38", "40", "42", "43"];
+import { PRODUITS, CATEGORIES, TAILLES, normaliserProduit } from "../data/catalogue";
 
 function Skeleton() {
   return (
-    <div className="products-grid">
-      {[1, 2, 3, 4].map((i) => (
-        <div key={i} className="product-card skeleton">
-          <div className="product-img skeleton-img" />
-          <div className="product-body">
+    <div className="products-grid" aria-hidden="true">
+      {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+        <div key={i} className="article-card skeleton">
+          <div className="article-img skeleton-img" />
+          <div className="article-body">
             <div className="skeleton-line w-60" />
             <div className="skeleton-line w-40" />
             <div className="skeleton-line w-full" />
@@ -42,106 +25,163 @@ function Skeleton() {
   );
 }
 
-function Catalogue() {
+export default function Catalogue() {
   const dispatch = useDispatch();
-  const firestoreProducts = useSelector((state) => state.products.items);
-  const [search, setSearch] = useState("");
-  const [categorie, setCategorie] = useState("Toutes");
-  const [taille, setTaille] = useState("");
-  const [prixMin, setPrixMin] = useState("");
-  const [prixMax, setPrixMax] = useState("");
-  const [loading, setLoading] = useState(true);
+  const produitsFirestore = useSelector((s) => s.products.items);
+  const [params, setParams] = useSearchParams();
+  const [chargement, setChargement] = useState(true);
+
+  const recherche = params.get("q") || "";
+  const categorie = params.get("cat") || "Toutes";
+  const taille = params.get("taille") || "";
+  const prixMin = params.get("min") || "";
+  const prixMax = params.get("max") || "";
+  const tri = params.get("tri") || "pertinence";
+
+  /** Applique plusieurs filtres en UNE seule navigation (évite les écrasements). */
+  const majParams = (modifications) => {
+    const suivant = new URLSearchParams(params);
+    Object.entries(modifications).forEach(([cle, valeur]) => {
+      if (!valeur || valeur === "Toutes" || valeur === "pertinence") suivant.delete(cle);
+      else suivant.set(cle, valeur);
+    });
+    setParams(suivant, { replace: true });
+  };
+
+  const majParam = (cle, valeur) => majParams({ [cle]: valeur });
+
+  const reinitialiser = () => setParams({}, { replace: true });
 
   useEffect(() => {
-    getDocs(collection(db, "produits")).then((snap) => {
-      if (!snap.empty) dispatch(setProducts(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
-    }).catch(() => {});
-    const t = setTimeout(() => setLoading(false), 400);
-    return () => clearTimeout(t);
+    let actif = true;
+    getDocs(collection(db, "produits"))
+      .then((snap) => {
+        if (actif && !snap.empty) {
+          dispatch(setProducts(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
+        }
+      })
+      .catch(() => {})
+      .finally(() => actif && setChargement(false));
+    const secours = setTimeout(() => actif && setChargement(false), 900);
+    return () => { actif = false; clearTimeout(secours); };
   }, [dispatch]);
 
-  const allProducts = useMemo(() => {
+  /** Fusion démo + Firestore, dédoublonnée par id. */
+  const tous = useMemo(() => {
     const map = new Map();
-    produitsExemple.forEach((p) => map.set(p.id, { ...p, vendeurNom: p.vendeur }));
-    firestoreProducts.forEach((p) => map.set(p.id, p));
+    PRODUITS.forEach((p) => map.set(String(p.id), normaliserProduit(p)));
+    produitsFirestore.forEach((p) => map.set(String(p.id), normaliserProduit(p)));
     return Array.from(map.values());
-  }, [firestoreProducts]);
+  }, [produitsFirestore]);
 
-  const filtered = useMemo(() => {
-    return allProducts.filter((p) => {
-      if (search && !p.nom.toLowerCase().includes(search.toLowerCase())) return false;
+  const resultats = useMemo(() => {
+    const q = recherche.trim().toLowerCase();
+    let liste = tous.filter((p) => {
+      if (q && !`${p.nom} ${p.marque} ${p.categorie} ${p.vendeur}`.toLowerCase().includes(q)) return false;
       if (categorie !== "Toutes" && p.categorie !== categorie) return false;
-      if (taille && p.tailles.length > 0 && !p.tailles.includes(taille)) return false;
+      if (taille && !p.tailles.includes(taille)) return false;
       if (prixMin && p.prix < Number(prixMin)) return false;
       if (prixMax && p.prix > Number(prixMax)) return false;
       return true;
     });
-  }, [search, categorie, taille, prixMin, prixMax]);
 
-  const { displayed, hasMore, loadingMore } = useInfiniteScroll(filtered, 6);
+    switch (tri) {
+      case "prix-asc": liste = [...liste].sort((a, b) => a.prix - b.prix); break;
+      case "prix-desc": liste = [...liste].sort((a, b) => b.prix - a.prix); break;
+      case "note": liste = [...liste].sort((a, b) => b.note - a.note); break;
+      case "nouveaux": liste = [...liste].reverse(); break;
+      default: break;
+    }
+    return liste;
+  }, [tous, recherche, categorie, taille, prixMin, prixMax, tri]);
+
+  const compteurs = useMemo(() => {
+    const c = { Toutes: tous.length };
+    tous.forEach((p) => { c[p.categorie] = (c[p.categorie] || 0) + 1; });
+    return c;
+  }, [tous]);
+
+  const { displayed, hasMore, loadingMore } = useInfiniteScroll(resultats, 8);
+  const filtresActifs = [recherche, categorie !== "Toutes" ? categorie : "", taille, prixMin, prixMax, tri !== "pertinence" ? tri : ""].filter(Boolean);
 
   return (
     <div className="catalogue">
-      <h2>Catalogue</h2>
+      <div className="catalogue-head">
+        <div>
+          <h2>{recherche ? `Résultats pour « ${recherche} »` : "Le catalogue"}</h2>
+          <p className="catalogue-count" aria-live="polite">
+            {resultats.length} article{resultats.length > 1 ? "s" : ""} disponible{resultats.length > 1 ? "s" : ""}
+          </p>
+        </div>
+        <div className="catalogue-tools">
+          <label htmlFor="tri" className="sr-only">Trier par</label>
+          <select id="tri" className="filter-select" value={tri} onChange={(e) => majParam("tri", e.target.value)}>
+            <option value="pertinence">Pertinence</option>
+            <option value="nouveaux">Nouveautés</option>
+            <option value="prix-asc">Prix croissant</option>
+            <option value="prix-desc">Prix décroissant</option>
+            <option value="note">Mieux notés</option>
+          </select>
+        </div>
+      </div>
 
       <div className="catalogue-filters">
         <input
           className="search-bar"
-          placeholder="Rechercher un produit..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          type="search"
+          placeholder="Rechercher par nom, marque, vendeur…"
+          value={recherche}
+          onChange={(e) => majParam("q", e.target.value)}
+          aria-label="Rechercher un produit"
         />
         <div className="filters-row">
-          <div className="filter-tags">
-            {categories.map((cat) => (
-              <button key={cat} className={`filter-tag ${categorie === cat ? "active" : ""}`}
-                onClick={() => setCategorie(cat)}>{cat}</button>
+          <div className="filter-tags" role="group" aria-label="Filtrer par catégorie">
+            {CATEGORIES.map((cat) => (
+              <button key={cat} className={`filter-tag ${categorie === cat ? "active" : ""}`} onClick={() => majParam("cat", cat)} aria-pressed={categorie === cat}>
+                {cat}{compteurs[cat] ? ` (${compteurs[cat]})` : ""}
+              </button>
             ))}
           </div>
-          <div className="filter-tags">
-            <select className="filter-select" value={taille} onChange={(e) => setTaille(e.target.value)}>
+          <div className="filters-group">
+            <select className="filter-select" value={taille} onChange={(e) => majParam("taille", e.target.value)} aria-label="Filtrer par taille">
               <option value="">Toutes tailles</option>
-              {allSizes.map((s) => <option key={s} value={s}>{s}</option>)}
+              {TAILLES.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
-            <input type="number" className="filter-input" placeholder="Prix min" value={prixMin}
-              onChange={(e) => setPrixMin(e.target.value)} />
-            <input type="number" className="filter-input" placeholder="Prix max" value={prixMax}
-              onChange={(e) => setPrixMax(e.target.value)} />
+            <input type="number" className="filter-input" placeholder="Prix min" value={prixMin} onChange={(e) => majParam("min", e.target.value)} aria-label="Prix minimum" min="0" />
+            <input type="number" className="filter-input" placeholder="Prix max" value={prixMax} onChange={(e) => majParam("max", e.target.value)} aria-label="Prix maximum" min="0" />
           </div>
         </div>
       </div>
 
-      {loading ? (
+      {filtresActifs.length > 0 && (
+        <div className="chips">
+          {recherche && <span className="chip">« {recherche} » <button onClick={() => majParam("q", "")} aria-label="Retirer la recherche">×</button></span>}
+          {categorie !== "Toutes" && <span className="chip">{categorie} <button onClick={() => majParam("cat", "")} aria-label="Retirer la catégorie">×</button></span>}
+          {taille && <span className="chip">Taille {taille} <button onClick={() => majParam("taille", "")} aria-label="Retirer la taille">×</button></span>}
+          {(prixMin || prixMax) && <span className="chip">{prixMin || "0"} – {prixMax || "∞"} FCFA <button onClick={() => majParams({ min: "", max: "" })} aria-label="Retirer le prix">×</button></span>}
+          {tri !== "pertinence" && <span className="chip">{tri.replace("-", " ")} <button onClick={() => majParam("tri", "")} aria-label="Retirer le tri">×</button></span>}
+          <button className="chip" onClick={reinitialiser} style={{ background: "transparent", border: "1px solid var(--c-border)", color: "var(--c-muted)" }}>Tout effacer</button>
+        </div>
+      )}
+
+      {chargement ? (
         <Skeleton />
-      ) : !displayed.length ? (
-        <p className="no-results">Aucun produit trouvé.</p>
+      ) : resultats.length === 0 ? (
+        <div className="empty-state">
+          <span className="empty-emoji">🔍</span>
+          <h2>Aucun article trouvé</h2>
+          <p>Essaie d'élargir ta recherche ou de retirer un filtre.</p>
+          <button className="btn-primary" onClick={reinitialiser}>Réinitialiser les filtres</button>
+        </div>
       ) : (
         <>
           <div className="products-grid">
-            {displayed.map((product) => (
-              <div key={product.id} className="product-card">
-                <Link to={`/produit/${product.id}`}>
-                  <div className="product-img">
-                    <img src={product.image} alt={product.nom} loading="lazy" />
-                  </div>
-                </Link>
-                <div className="product-body">
-                  <Link to={`/produit/${product.id}`}>
-                    <h3>{product.nom}</h3>
-                  </Link>
-                  <p className="product-category">{product.categorie}</p>
-                  <p className="product-price">{product.prix?.toLocaleString()} FCFA</p>
-                  <CarreFav product={product} />
-                </div>
-              </div>
-            ))}
+            {displayed.map((produit) => <ArticleCard key={produit.id} produit={produit} />)}
           </div>
-          {loadingMore && <div className="loading-more">Chargement...</div>}
-          {!hasMore && displayed.length > 0 && <p className="end-list">Tous les produits sont affichés</p>}
+          {loadingMore && <div className="loading-more">Chargement…</div>}
+          {!hasMore && displayed.length > 0 && <p className="end-list">Tu as vu tous les articles ✨</p>}
         </>
       )}
     </div>
   );
 }
-
-export default Catalogue;

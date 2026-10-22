@@ -1,7 +1,8 @@
 import { createSlice } from "@reduxjs/toolkit";
+import { chargerFavoris } from "./persistence";
 
 const initialState = {
-  items: [],
+  items: chargerFavoris(),
 };
 
 const favoritesSlice = createSlice({
@@ -13,7 +14,7 @@ const favoritesSlice = createSlice({
       if (idx !== -1) {
         state.items.splice(idx, 1);
       } else {
-        state.items.push(action.payload);
+        state.items.unshift(action.payload);
       }
     },
   },
