@@ -510,6 +510,21 @@ button { cursor: pointer; }
 .auth-form input:focus { border-color: var(--c-primary); box-shadow: 0 0 0 4px rgba(0,119,130,.10); }
 .auth-link { text-align: center; font-size: 13.5px; color: var(--c-muted); }
 .auth-link a { color: var(--c-primary); font-weight: 650; }
+.auth-forgot {
+  align-self: flex-end;
+  margin-top: -8px;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--c-primary);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.auth-forgot:hover { text-decoration: underline; }
+.auth-forgot:focus-visible { outline: 2px solid var(--c-primary); outline-offset: 3px; border-radius: 4px; }
+.auth-forgot:disabled { opacity: .6; cursor: wait; }
 
 .role-selector { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 4px 0; }
 .role-option {

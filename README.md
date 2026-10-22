@@ -37,6 +37,7 @@ Cyrano est une application web de marketplace de seconde main : les clients parc
 - Suivi de commande par étapes : Reçue → En cours → Expédiée → Livrée.
 - Offres de prix envoyées au vendeur du produit.
 - Espace profil, modification du nom, suppression du compte.
+- Réinitialisation du mot de passe par email depuis la page de connexion.
 
 ### Vendeur
 
@@ -152,7 +153,9 @@ Le rôle est stocké dans `utilisateurs/{uid}.role` et chargé au login par `src
 
 \* Les routes client sont techniquement accessibles à un vendeur par URL, mais les liens sont masqués. L'admin n'a aucun lien client dans l'interface.
 
-**Compte administrateur :** `admin@cyrano.com` (bootstrap). Voir la section Sécurité : ce mécanisme doit être remplacé par un custom claim avant production.
+**Compte administrateur :** `admin@cyrano.com` (bootstrap). Voir la section Sécurité : ce mécanisme doit être remplacé par un custom claim avant production. Un lien **« Mot de passe oublié ? »** permet d'envoyer un email de réinitialisation depuis `/login`.
+
+**Comptes de démonstration :** `demo.client@cyrano.com` (client) et `demo.vendeur@cyrano.com` (vendeur) existent dans Firebase Auth, avec `demo: true` dans Firestore. Leurs mots de passe temporaires ne sont pas versionnés dans le dépôt. À supprimer ou désactiver après la démonstration.
 
 ---
 

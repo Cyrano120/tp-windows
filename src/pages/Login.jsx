@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import { sendPasswordResetEmail, signInWithEmailAndPassword } from "firebase/auth";
 import { useSelector, useDispatch } from "react-redux";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { auth } from "../firebase/firebase";
@@ -11,6 +11,7 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [motDePasse, setMotDePasse] = useState("");
   const [envoi, setEnvoi] = useState(false);
+  const [reinitialisation, setReinitialisation] = useState(false);
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const location = useLocation();
@@ -19,6 +20,34 @@ export default function Login() {
   const accueilRole = (u) => (u?.role === "admin" ? "/dashboard" : u?.role === "vendeur" ? "/espace-vendeur" : "/catalogue");
 
   if (user) return <Navigate to={location.state?.from || accueilRole(user)} replace />;
+
+  /**
+   * Envoie un lien de réinitialisation sans révéler si l'email existe.
+   * Firebase renvoie volontairement peu d'informations pour limiter
+   * l'énumération des comptes.
+   */
+  const motDePasseOublie = async () => {
+    if (reinitialisation) return;
+    const adresse = email.trim();
+    if (!adresse) return toast.error("Saisis ton email pour recevoir le lien.");
+    setReinitialisation(true);
+    try {
+      await sendPasswordResetEmail(auth, adresse);
+      toast.success("Si un compte existe pour cet email, un lien de réinitialisation a été envoyé.");
+    } catch (err) {
+      if (err.code === "auth/invalid-email") {
+        toast.error("Adresse email invalide.");
+      } else if (err.code === "auth/too-many-requests") {
+        toast.error("Trop de tentatives. Réessaie dans quelques minutes.");
+      } else if (err.code === "auth/network-request-failed") {
+        toast.error("Connexion impossible. Vérifie ton réseau.");
+      } else {
+        toast.success("Si un compte existe pour cet email, un lien de réinitialisation a été envoyé.");
+      }
+    } finally {
+      setReinitialisation(false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -56,6 +85,15 @@ export default function Login() {
 
         <label htmlFor="mdp" className="sr-only">Mot de passe</label>
         <input id="mdp" type="password" placeholder="Mot de passe" value={motDePasse} onChange={(e) => setMotDePasse(e.target.value)} required autoComplete="current-password" />
+
+        <button
+          type="button"
+          className="auth-forgot"
+          onClick={motDePasseOublie}
+          disabled={reinitialisation}
+        >
+          {reinitialisation ? "Envoi du lien…" : "Mot de passe oublié ?"}
+        </button>
 
         <button type="submit" className="btn-primary btn-block" disabled={envoi}>
           {envoi ? "Connexion…" : "Se connecter"}

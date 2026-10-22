@@ -39,6 +39,7 @@ Ces points sont vérifiés dans le code et/ou en production :
 - **Injection CSV** neutralisée dans l'export admin (`=`, `+`, `-`, `@`).
 - **Routes protégées** par `RequireAuth` et chargement différé des pages.
 - **Admin sans liens client** dans l'en-tête (panier, favoris, messages).
+- **Réinitialisation de mot de passe** par email depuis `/login`, avec message neutre pour ne pas révéler l'existence d'un compte.
 - **Tests** : 13 tests unitaires (totaux, normalisation produit, panier, stock).
 - **Build** : découpage `react` / `firebase` / `charts`, pages en lazy loading.
 
@@ -154,7 +155,7 @@ request.auth.token.email == 'admin@cyrano.com' || role() == 'admin'
 
 ### H4. Absence d'App Check, de rate limiting et de vérification email
 
-**Constat.** La clé API Firebase est publique par nature. Aucun App Check, CAPTCHA ou quota applicatif. L'inscription ne vérifie pas l'email. Pas de réinitialisation de mot de passe.
+**Constat.** La clé API Firebase est publique par nature. Aucun App Check, CAPTCHA ou quota applicatif. L'inscription ne vérifie pas l'email. La réinitialisation de mot de passe est désormais disponible (lien « Mot de passe oublié ? »), mais aucune vérification d'adresse n'est exigée.
 
 **Impact.** Spam de produits / offres / avis, création de comptes jetables, usurpation d'email, coûts Firestore.
 
@@ -287,7 +288,7 @@ Passer progressivement à TypeScript, ou au minimum valider les documents Firest
 7. Vérification d'achat pour les avis et unicité.
 8. Pagination admin/vendeur et index Firestore.
 9. Panier/favoris par UID et nettoyage à la déconnexion.
-10. Réinitialisation de mot de passe + vérification email.
+10. Vérification email (réinitialisation de mot de passe déjà ajoutée).
 11. Suppression de compte complète (anonymisation + Storage).
 12. Storage activé et déployé, ou upload retiré.
 
